@@ -10,11 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout coursework repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: coursework
       - name: Checkout original public Astro portfolio
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: kkokkiyo/kkokkiyo.github.io
           path: portfolio
@@ -31,7 +31,7 @@ jobs:
               site['nav'].insert(1,link)
           path.write_text(json.dumps(site,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
           PY
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '22.12.0'
           cache: npm
@@ -49,7 +49,7 @@ jobs:
           test -s portfolio/dist/pipeline/index.html
           test -s portfolio/dist/data/portfolio.json
       - name: Upload deployable artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: portfolio-dist
           path: portfolio/dist
