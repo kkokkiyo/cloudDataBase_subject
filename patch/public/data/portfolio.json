@@ -1,0 +1,148 @@
+{
+  "projects": [
+    {
+      "project_id": "dot-pacman",
+      "title": "Dot Pacman",
+      "field": "HCI · Accessibility",
+      "period": "2026.09",
+      "summary": "게임 화면의 객체와 미로를 구조화하여 Dot Pad의 촉각 핀으로 변환하는 접근성 연구",
+      "role": "개인 연구",
+      "skills": [
+        "hci",
+        "vision",
+        "python",
+        "pytorch"
+      ],
+      "detail_url": "/projects/dot-pacman/",
+      "has_pipeline": true
+    },
+    {
+      "project_id": "safelift-xr",
+      "title": "SafeLift XR",
+      "field": "XR · Human-AI Interaction",
+      "period": "2026",
+      "summary": "MediaPipe와 센서를 통해 스쿼트 자세를 판정하고 Unity 아바타와 음성 피드백을 제공",
+      "role": "PM · 백엔드 · Unity",
+      "skills": [
+        "xr",
+        "hci",
+        "python",
+        "mediapipe",
+        "unity"
+      ],
+      "detail_url": "/projects/safelift-xr/",
+      "has_pipeline": true
+    },
+    {
+      "project_id": "lg-aimers",
+      "title": "LG Aimers 8기 모델 경량화",
+      "field": "LLM · Model Optimization",
+      "period": "2026.03–04",
+      "summary": "EXAONE FP8 및 KV 캐시 양자화와 캘리브레이션 데이터 최적화",
+      "role": "팀장",
+      "skills": [
+        "llm",
+        "python",
+        "pytorch"
+      ],
+      "detail_url": "/projects/lg-aimers/",
+      "has_pipeline": false
+    }
+  ],
+  "skills": [
+    {
+      "skill_id": "hci",
+      "name": "HCI · Accessibility"
+    },
+    {
+      "skill_id": "vision",
+      "name": "Computer Vision"
+    },
+    {
+      "skill_id": "python",
+      "name": "Python"
+    },
+    {
+      "skill_id": "pytorch",
+      "name": "PyTorch"
+    },
+    {
+      "skill_id": "xr",
+      "name": "XR"
+    },
+    {
+      "skill_id": "mediapipe",
+      "name": "MediaPipe"
+    },
+    {
+      "skill_id": "unity",
+      "name": "Unity"
+    },
+    {
+      "skill_id": "llm",
+      "name": "LLM"
+    }
+  ],
+  "pipeline": {
+    "dot-pacman": [
+      {
+        "step_no": 1,
+        "title": "게임 원본 입력",
+        "description": "게임 화면의 미로·객체를 포함한 프레임을 획득",
+        "input_summary": "게임 프레임",
+        "output_summary": "분석 이미지"
+      },
+      {
+        "step_no": 2,
+        "title": "객체 인식",
+        "description": "YOLO로 팩맨과 유령 등 객체의 위치를 검출",
+        "input_summary": "분석 이미지",
+        "output_summary": "객체 종류·좌표"
+      },
+      {
+        "step_no": 3,
+        "title": "게임 상태 구조화",
+        "description": "검출된 객체와 격자 미로를 결합해 공간 정보를 구성",
+        "input_summary": "검출 객체·미로",
+        "output_summary": "구조화된 상태"
+      },
+      {
+        "step_no": 4,
+        "title": "Dot Pad 촉각 표현",
+        "description": "구조화된 상태를 60×40 핀 기반 기호와 미로로 표현",
+        "input_summary": "게임 상태",
+        "output_summary": "촉각 출력 프리뷰"
+      }
+    ],
+    "safelift-xr": [
+      {
+        "step_no": 1,
+        "title": "동작·센서 입력",
+        "description": "운동 영상과 IMU·압력 센서 입력을 수집",
+        "input_summary": "영상·센서",
+        "output_summary": "동작 측정값"
+      },
+      {
+        "step_no": 2,
+        "title": "관절 위치 추출",
+        "description": "MediaPipe Pose로 주요 관절 좌표를 추정",
+        "input_summary": "입력 영상",
+        "output_summary": "관절 키포인트"
+      },
+      {
+        "step_no": 3,
+        "title": "운동 자세 판정",
+        "description": "관절과 센서 특징을 바탕으로 자세와 피드백 조건을 판단",
+        "input_summary": "포즈·센서 특징",
+        "output_summary": "자세 판정"
+      },
+      {
+        "step_no": 4,
+        "title": "XR·리포트 피드백",
+        "description": "Unity XR 아바타와 음성 안내 및 운동 후 리포트 제공",
+        "input_summary": "자세 판정",
+        "output_summary": "아바타·음성"
+      }
+    ]
+  }
+}
