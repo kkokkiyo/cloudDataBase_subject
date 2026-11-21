@@ -1,0 +1,94 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Private S3 + CloudFront OAC for Cloud Database class
+Parameters:
+  SiteBucketName:
+    Type: String
+Resources:
+  SiteBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: !Ref SiteBucketName
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+  OriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub '${AWS::StackName}-oac'
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+  PrettyUrls:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: !Sub '${AWS::StackName}-pretty-urls'
+      AutoPublish: true
+      FunctionConfig:
+        Comment: Redirect pretty paths to index.html
+        Runtime: cloudfront-js-1.0
+      FunctionCode: |
+        function handler(event) {
+          var r=event.request, u=r.uri;
+          if(u.endsWith('/')) r.uri+='index.html';
+          else if(u.indexOf('.',u.lastIndexOf('/')) === -1) r.uri+='/index.html';
+          return r;
+        }
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultRootObject: index.html
+        Origins:
+          - Id: private-s3
+            DomainName: !GetAtt SiteBucket.RegionalDomainName
+            OriginAccessControlId: !Ref OriginAccessControl
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+        DefaultCacheBehavior:
+          TargetOriginId: private-s3
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          CachePolicyId: '658327ea-f89d-4fab-a63d-7e88639e58f6'
+          FunctionAssociations:
+            - EventType: viewer-request
+              FunctionARN: !GetAtt PrettyUrls.FunctionMetadata.FunctionARN
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+        PriceClass: PriceClass_200
+  SiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SiteBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudFrontReadOnly
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub '${SiteBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub 'arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${Distribution}'
+Outputs:
+  BucketName:
+    Value: !Ref SiteBucket
+  DistributionId:
+    Value: !Ref Distribution
+  CloudFrontUrl:
+    Value: !Sub 'https://${Distribution.DomainName}'
