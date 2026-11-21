@@ -1,0 +1,55 @@
+---
+import Base from '../layouts/Base.astro';
+---
+<Base title="Research Atlas" description="기술·프로젝트 관계 그래프">
+  <div class="hero"><p class="eyebrow">RESEARCH ATLAS / S02</p><h1>기술로 연결되는 연구</h1><p>관심 기술을 선택하면 관련 프로젝트를 필터링하고 상세 페이지로 이동할 수 있습니다.</p></div>
+  <div class="atlas">
+    <aside><h2>기술 필터</h2><div id="filters"></div><button id="clear" type="button">전체 보기</button></aside>
+    <section><h2>프로젝트 · 기술 관계</h2><svg id="graph" viewBox="0 0 650 380" role="img" aria-label="프로젝트와 기술 연결 그래프"></svg><p id="status" aria-live="polite"></p></section>
+  </div>
+  <h2 class="results">연결된 프로젝트 <span id="count"></span></h2><div class="cards" id="cards"></div><p id="error" role="status"></p>
+  <script is:inline>
+  (() => {
+    const $=id=>document.getElementById(id);
+    const NS='http://www.w3.org/2000/svg';
+    const elem=(name,text)=>{const n=document.createElement(name);n.textContent=text||'';return n;};
+    const se=(name,attrs)=>{const n=document.createElementNS(NS,name);Object.entries(attrs).forEach(([k,v])=>n.setAttribute(k,v));return n;};
+    let projects=[],skills=[],active=null;
+    function node(x,y,label,project,selected,callback) {
+      const g=se('g',{tabindex:'0',role:'button','aria-label':label,opacity:selected?1:0.2,style:'cursor:pointer'});
+      g.append(se('circle',{cx:x,cy:y,r:project?41:28,fill:project?'#2464a1':'#cfe5fa',stroke:'#749fc4'}));
+      const t=se('text',{x:x,y:y+4,'text-anchor':'middle','font-size':project?11:10,fill:project?'#fff':'#214b75'});
+      t.textContent=label.length>13?label.slice(0,12)+'…':label;g.append(t);
+      g.onclick=callback;g.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();callback();}};$('graph').append(g);
+    }
+    function render(){
+      const filtered=projects.filter(p=>!active||p.skills.includes(active));
+      $('count').textContent='('+filtered.length+')';$('status').textContent=active?'선택한 기술: '+skills.find(s=>s.skill_id===active).name:'전체 기술과 프로젝트 표시';
+      const filters=$('filters');filters.replaceChildren();
+      skills.forEach(s=>{const b=elem('button',s.name);b.type='button';b.className='filter';b.setAttribute('aria-pressed',s.skill_id===active?'true':'false');b.onclick=()=>{active=active===s.skill_id?null:s.skill_id;render();};filters.append(b);});
+      const cards=$('cards');cards.replaceChildren();
+      filtered.forEach(p=>{const article=elem('article');article.className='card';
+        article.append(elem('small',p.field+' · '+p.period),elem('h3',p.title),elem('p',p.summary),elem('p','담당: '+p.role));
+        const a=elem('a','프로젝트 상세');a.href=p.detail_url;article.append(a);
+        if(p.has_pipeline){const replay=elem('a','Pipeline Replay');replay.href='/pipeline/?project='+encodeURIComponent(p.project_id);article.append(replay);}
+        cards.append(article);
+      });
+      const g=$('graph');g.replaceChildren();const pp=new Map(projects.map((p,i)=>[p.project_id,{x:135+i*190,y:95}]));
+      const sp=new Map(skills.map((s,i)=>[s.skill_id,{x:50+(i%4)*178,y:260+Math.floor(i/4)*90}]));
+      projects.forEach(p=>p.skills.forEach(sid=>{const a=pp.get(p.project_id),b=sp.get(sid);if(b)g.append(se('line',{x1:a.x,y1:a.y+41,x2:b.x,y2:b.y-28,stroke:'#a8c4e1','stroke-width':2,opacity:!active||active===sid?1:.15}));}));
+      projects.forEach(p=>{const a=pp.get(p.project_id);node(a.x,a.y,p.title,true,filtered.includes(p),()=>location.href=p.detail_url);});
+      skills.forEach(s=>{const a=sp.get(s.skill_id);node(a.x,a.y,s.skill_id.toUpperCase(),false,!active||active===s.skill_id,()=>{active=active===s.skill_id?null:s.skill_id;render();});});
+    }
+    $('clear').onclick=()=>{active=null;render();};
+    fetch('/data/portfolio.json').then(r=>{if(!r.ok)throw Error('HTTP '+r.status);return r.json();}).then(d=>{projects=d.projects;skills=d.skills;render();}).catch(e=>$('error').textContent=e.message);
+  })();
+  </script>
+  <style is:global>
+  .hero{padding:28px 0 34px}.eyebrow{letter-spacing:.14em;font-size:.75rem;color:#3977bb;font-weight:750}.hero h1{font-size:clamp(2rem,4vw,2.65rem);font-weight:800;letter-spacing:-.05em;margin:8px 0}.hero>p:not(.eyebrow){color:#73839a;line-height:1.8}
+  .atlas{display:grid;grid-template-columns:200px 1fr;gap:16px}.atlas>aside,.atlas>section,.card{border:1px solid #dce5ef;border-radius:15px;padding:20px;background:#fff}.atlas h2{font-weight:760;font-size:1.05rem;margin-bottom:17px}
+  #filters{display:grid;gap:7px}.filter,#clear{font:inherit;font-size:.83rem;text-align:left;padding:9px 12px;border:1px solid #cad9e9;border-radius:8px;color:#234a78;background:#f8fbff;cursor:pointer}.filter[aria-pressed=true]{background:#d9edff;border:2px solid #4686bf}#clear{width:100%;margin-top:10px;text-align:center}
+  #graph{width:100%;height:auto}#status{color:#6e829a;font-size:.8rem}.results{font-size:1.25rem;font-weight:760;margin:30px 0 15px}.cards{display:grid;grid-template-columns:1fr 1fr;gap:14px}.card h3{font-size:1.12rem;font-weight:780;margin:9px 0}.card small{color:#3570a6}.card p{font-size:.9rem;color:#627891;line-height:1.7}.card a{display:inline-block;margin:10px 15px 0 0;color:#2564a5;text-decoration:underline;font-size:.9rem}
+  @media(max-width:700px){.atlas{grid-template-columns:1fr}.cards{grid-template-columns:1fr}#filters{grid-template-columns:1fr 1fr}}
+  @media(prefers-color-scheme:dark){.atlas>aside,.atlas>section,.card{background:#172337;border-color:#45526a}.filter,#clear{background:#263b54;color:#e3efff}.card p{color:#adbed5}}
+  </style>
+</Base>
