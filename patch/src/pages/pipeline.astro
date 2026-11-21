@@ -1,0 +1,53 @@
+---
+import Base from '../layouts/Base.astro';
+---
+<Base title="Interactive Pipeline Replay" description="프로젝트 처리 과정을 단계별로 재현합니다.">
+  <header class="pipeline-intro"><p class="eyebrow">PROJECT EXPLORER / S03</p><h1>Interactive Pipeline Replay</h1><p>개발 산출물을 바탕으로 입력·처리·출력 단계를 설명하는 개념 도식입니다. 실시간 AI 추론은 실행하지 않습니다.</p></header>
+  <section class="pipeline-shell">
+    <label for="project">시나리오 선택</label><select id="project"><option value="dot-pacman">Dot Pacman</option><option value="safelift-xr">SafeLift XR</option></select>
+    <ol id="steps" class="pipeline-steps" aria-label="파이프라인 단계"></ol>
+    <div class="pipeline-content">
+      <figure class="pipeline-diagram"><figcaption>CONCEPTUAL PIPELINE / 개념도</figcaption><div class="pipeline-flow"><span id="flow-input"></span><b>→</b><span id="flow-process"></span><b>→</b><span id="flow-output"></span></div><p>학습용 설명 도식 · 실제 측정 장면이 아닙니다.</p></figure>
+      <div class="pipeline-details"><p id="counter" class="eyebrow"></p><h2 id="title"></h2><p id="description"></p><dl><dt>입력</dt><dd id="input"></dd><dt>출력</dt><dd id="output"></dd></dl></div>
+    </div>
+    <nav class="pipeline-actions" aria-label="단계 이동"><button id="prev" type="button">이전</button><button id="next" type="button">다음</button><a id="detail" href="/projects/dot-pacman/">프로젝트 상세</a></nav>
+    <p id="error" role="status"></p>
+  </section>
+  <script is:inline>
+    (() => {
+      const $=id=>document.getElementById(id);
+      let dataset=null,items=[],index=0;
+      const select=$('project');
+      const id=new URLSearchParams(location.search).get('project');
+      if(['dot-pacman','safelift-xr'].includes(id))select.value=id;
+      function render(){
+        const s=items[index];if(!s)return;
+        const list=$('steps');list.replaceChildren();
+        items.forEach((step,i)=>{const li=document.createElement('li'),b=document.createElement('button');b.type='button';b.textContent='STEP '+step.step_no+' · '+step.title;b.setAttribute('aria-current',i===index?'step':'false');b.onclick=()=>{index=i;render();};li.append(b);list.append(li);});
+        $('counter').textContent='STEP '+(index+1)+' / '+items.length;
+        $('title').textContent=s.title;$('description').textContent=s.description;
+        $('input').textContent=s.input_summary;$('output').textContent=s.output_summary;
+        $('flow-input').textContent=s.input_summary;$('flow-process').textContent=s.title;$('flow-output').textContent=s.output_summary;
+        $('prev').disabled=index===0;$('next').disabled=index===items.length-1;
+        $('detail').href='/projects/'+encodeURIComponent(select.value)+'/';
+      }
+      function change(){index=0;items=dataset.pipeline[select.value].slice().sort((a,b)=>a.step_no-b.step_no);render();}
+      select.onchange=change;
+      $('prev').onclick=()=>{if(index>0){index--;render();}};
+      $('next').onclick=()=>{if(index+1<items.length){index++;render();}};
+      fetch('/data/portfolio.json').then(r=>{if(!r.ok)throw Error('HTTP '+r.status);return r.json();}).then(d=>{dataset=d;change();}).catch(e=>$('error').textContent='Replay를 불러올 수 없습니다: '+e.message);
+    })();
+  </script>
+  <style is:global>
+    .pipeline-intro{padding:28px 0 35px}.eyebrow{font-size:.75rem;font-weight:780;color:#2c68a9;letter-spacing:.14em}.pipeline-intro h1{font-size:clamp(2rem,4vw,2.6rem);font-weight:800;margin:7px 0 14px;letter-spacing:-.04em}.pipeline-intro>p:not(.eyebrow){color:#75849a;line-height:1.8}
+    .pipeline-shell{padding:24px;border:1px solid #dde6ef;background:#fff;border-radius:15px}.pipeline-shell label{font-weight:760}
+    #project{display:block;margin:12px 0 22px;border:1px solid #b5c9df;background:transparent;color:inherit;border-radius:10px;padding:12px;width:min(100%,360px)}
+    .pipeline-steps{list-style:none;display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:0;margin:0 0 26px}.pipeline-steps button{width:100%;text-align:left;min-height:80px;font:inherit;font-size:.83rem;color:#405b79;border:1px solid #d8e3ee;background:#f6f9fd;border-radius:10px;padding:12px;cursor:pointer}.pipeline-steps button[aria-current=step]{border:2px solid #3477b9;background:#eaf3ff;color:#235e96;font-weight:760}
+    .pipeline-content{display:grid;grid-template-columns:1.25fr 1fr;gap:22px;align-items:center}.pipeline-diagram{margin:0;border-radius:12px;padding:22px;background:#112744;color:#e9f4ff;min-height:270px;display:flex;flex-direction:column;justify-content:space-between}.pipeline-diagram figcaption,.pipeline-diagram p{color:#9cb9d9;font-size:.72rem}.pipeline-diagram p{text-align:right}
+    .pipeline-flow{display:flex;justify-content:space-around;align-items:center;gap:7px}.pipeline-flow span{padding:14px 7px;border-radius:8px;border:1px solid #5e91c7;background:#21416c;max-width:34%;font-size:.78rem;overflow-wrap:anywhere;text-align:center}
+    .pipeline-details h2{font-size:1.25rem;font-weight:770;margin:6px 0 12px}.pipeline-details>p:not(.eyebrow){color:#6a7d94;font-size:.9rem;line-height:1.7}.pipeline-details dl{display:grid;grid-template-columns:3rem 1fr;gap:12px;font-size:.84rem;margin-top:18px}.pipeline-details dt{color:#3674af;font-weight:750}.pipeline-details dd{margin:0;color:#627991}
+    .pipeline-actions{display:flex;align-items:center;gap:10px;margin-top:28px}.pipeline-actions button{border:1px solid #aec7e1;padding:10px 20px;border-radius:8px;background:transparent;font:inherit}.pipeline-actions button:disabled{opacity:.3}.pipeline-actions #next{background:#2465a6;color:#fff}.pipeline-actions a{margin-left:auto;font-size:.84rem;color:#2366a7}
+    @media(max-width:730px){.pipeline-steps{grid-template-columns:1fr 1fr}.pipeline-content{grid-template-columns:1fr}.pipeline-actions{flex-wrap:wrap}.pipeline-actions a{margin-left:0}}
+    @media(prefers-color-scheme:dark){.pipeline-shell{background:#142033;border-color:#465773}.pipeline-steps button{background:#223550;color:#e3f0ff;border-color:#425b7d}.pipeline-details>p:not(.eyebrow){color:#afc0d7}}
+  </style>
+</Base>
