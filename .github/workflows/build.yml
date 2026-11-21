@@ -1,0 +1,57 @@
+name: Build AWS course portfolio
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout coursework repository
+        uses: actions/checkout@v4
+        with:
+          path: coursework
+      - name: Checkout original public Astro portfolio
+        uses: actions/checkout@v4
+        with:
+          repository: kkokkiyo/kkokkiyo.github.io
+          path: portfolio
+      - name: Apply Research Atlas and Replay
+        run: |
+          cp -a coursework/patch/. portfolio/
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          path=Path('portfolio/src/data/site.json')
+          site=json.loads(path.read_text(encoding='utf-8'))
+          for link in reversed([{'label':'Atlas','href':'/atlas/'},{'label':'Replay','href':'/pipeline/'}]):
+            if not any(i.get('href')==link['href'] for i in site['nav']):
+              site['nav'].insert(1,link)
+          path.write_text(json.dumps(site,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+          cache: npm
+          cache-dependency-path: portfolio/package-lock.json
+      - name: Install
+        run: npm ci
+        working-directory: portfolio
+      - name: Build
+        run: npm run build
+        working-directory: portfolio
+      - name: Validate outputs
+        run: |
+          test -s portfolio/dist/index.html
+          test -s portfolio/dist/atlas/index.html
+          test -s portfolio/dist/pipeline/index.html
+          test -s portfolio/dist/data/portfolio.json
+      - name: Upload deployable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: portfolio-dist
+          path: portfolio/dist
+          retention-days: 14
+          if-no-files-found: error
