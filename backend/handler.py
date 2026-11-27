@@ -10,10 +10,13 @@ from boto3.dynamodb.conditions import Key
 
 LOG = logging.getLogger(__name__)
 LOG.setLevel(logging.INFO)
-dynamodb = boto3.resource("dynamodb")
+dynamodb = None
 
 
 def table(env_name):
+    global dynamodb
+    if dynamodb is None:
+        dynamodb = boto3.resource("dynamodb")
     return dynamodb.Table(os.environ[env_name])
 
 
