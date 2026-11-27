@@ -1,0 +1,322 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Week13 DynamoDB, API Gateway Lambda, AppSync GraphQL guestbook
+Parameters:
+  CloudFrontOrigin:
+    Type: String
+    Description: CloudFront origin in the form https://xxxxx.cloudfront.net
+    Default: https://d6oennms0h6ql.cloudfront.net
+Resources:
+  Projects:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions: [{AttributeName: project_id, AttributeType: S}]
+      KeySchema: [{AttributeName: project_id, KeyType: HASH}]
+  Skills:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions: [{AttributeName: skill_id, AttributeType: S}]
+      KeySchema: [{AttributeName: skill_id, KeyType: HASH}]
+  ProjectSkills:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: project_id, AttributeType: S}
+        - {AttributeName: skill_id, AttributeType: S}
+      KeySchema:
+        - {AttributeName: project_id, KeyType: HASH}
+        - {AttributeName: skill_id, KeyType: RANGE}
+      GlobalSecondaryIndexes:
+        - IndexName: skill_id-index
+          KeySchema:
+            - {AttributeName: skill_id, KeyType: HASH}
+            - {AttributeName: project_id, KeyType: RANGE}
+          Projection: {ProjectionType: ALL}
+  PipelineSteps:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: project_id, AttributeType: S}
+        - {AttributeName: step_no, AttributeType: N}
+      KeySchema:
+        - {AttributeName: project_id, KeyType: HASH}
+        - {AttributeName: step_no, KeyType: RANGE}
+  Guestbook:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: PK, AttributeType: S}
+        - {AttributeName: SK, AttributeType: S}
+      KeySchema:
+        - {AttributeName: PK, KeyType: HASH}
+        - {AttributeName: SK, KeyType: RANGE}
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: PortfolioReadOnly
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:Scan, dynamodb:Query]
+                Resource:
+                  - !GetAtt Projects.Arn
+                  - !GetAtt Skills.Arn
+                  - !GetAtt ProjectSkills.Arn
+                  - !Sub '${ProjectSkills.Arn}/index/*'
+                  - !GetAtt PipelineSteps.Arn
+  ReadLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 10
+      MemorySize: 128
+      Environment:
+        Variables:
+          PROJECTS_TABLE: !Ref Projects
+          SKILLS_TABLE: !Ref Skills
+          LINKS_TABLE: !Ref ProjectSkills
+          STEPS_TABLE: !Ref PipelineSteps
+      Code:
+        ZipFile: |
+          import json, os, boto3, logging
+          from decimal import Decimal
+          from boto3.dynamodb.conditions import Key
+          db=boto3.resource('dynamodb')
+          def scan(t):
+              result=[]; kwargs={}
+              while True:
+                  p=t.scan(**kwargs); result+=p.get('Items',[])
+                  if 'LastEvaluatedKey' not in p: return result
+                  kwargs['ExclusiveStartKey']=p['LastEvaluatedKey']
+          def query(t,**kwargs):
+              result=[]
+              while True:
+                  p=t.query(**kwargs); result+=p.get('Items',[])
+                  if 'LastEvaluatedKey' not in p: return result
+                  kwargs['ExclusiveStartKey']=p['LastEvaluatedKey']
+          def enc(v):
+              if isinstance(v,Decimal): return int(v) if v==int(v) else float(v)
+              raise TypeError()
+          def out(code,obj):
+              return {'statusCode':code,'headers':{'Content-Type':'application/json','Cache-Control':'no-store'},'body':json.dumps(obj,ensure_ascii=False,default=enc)}
+          def lambda_handler(event,ctx):
+              if event.get('requestContext',{}).get('http',{}).get('method')!='GET': return out(405,{'error':'Method not allowed'})
+              path=event.get('rawPath','/').rstrip('/') or '/'
+              try:
+                  projects=db.Table(os.environ['PROJECTS_TABLE'])
+                  skills=db.Table(os.environ['SKILLS_TABLE'])
+                  links=db.Table(os.environ['LINKS_TABLE'])
+                  steps=db.Table(os.environ['STEPS_TABLE'])
+                  if path=='/projects':
+                      return out(200,{'projects':sorted(scan(projects),key=lambda x:x.get('period',''),reverse=True)})
+                  if path=='/graph':
+                      sid=(event.get('queryStringParameters') or {}).get('skill_id')
+                      if sid and len(sid)>80: return out(400,{'error':'Invalid skill_id'})
+                      edges=query(links,IndexName='skill_id-index',KeyConditionExpression=Key('skill_id').eq(sid)) if sid else scan(links)
+                      return out(200,{'skills':scan(skills),'edges':edges})
+                  bits=path.strip('/').split('/')
+                  if len(bits)==2 and bits[0]=='projects':
+                      p=projects.get_item(Key={'project_id':bits[1]}).get('Item')
+                      return out(200,{'project':p}) if p else out(404,{'error':'Not found'})
+                  if len(bits)==3 and bits[0]=='projects' and bits[2]=='pipeline':
+                      return out(200,{'project_id':bits[1],'steps':query(steps,KeyConditionExpression=Key('project_id').eq(bits[1]))})
+                  return out(404,{'error':'Route not found'})
+              except Exception:
+                  logging.exception('Read API error')
+                  return out(500,{'error':'Internal server error'})
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      ProtocolType: HTTP
+      Name: !Sub '${AWS::StackName}-projects'
+      CorsConfiguration:
+        AllowOrigins: [!Ref CloudFrontOrigin]
+        AllowHeaders: [content-type]
+        AllowMethods: [GET, OPTIONS]
+        MaxAge: 300
+  HttpIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt ReadLambda.Arn
+      PayloadFormatVersion: '2.0'
+  ProjectsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: 'GET /projects', Target: !Sub 'integrations/${HttpIntegration}'}
+  ProjectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: 'GET /projects/{projectId}', Target: !Sub 'integrations/${HttpIntegration}'}
+  GraphRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: 'GET /graph', Target: !Sub 'integrations/${HttpIntegration}'}
+  StepsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: 'GET /projects/{projectId}/pipeline', Target: !Sub 'integrations/${HttpIntegration}'}
+  DefaultStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref HttpApi
+      StageName: $default
+      AutoDeploy: true
+  LambdaInvoke:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ReadLambda
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/GET/*'
+  GuestbookApi:
+    Type: AWS::AppSync::GraphQLApi
+    Properties:
+      Name: !Sub '${AWS::StackName}-guestbook'
+      AuthenticationType: API_KEY
+      XrayEnabled: false
+  GuestbookKey:
+    Type: AWS::AppSync::ApiKey
+    Properties:
+      ApiId: !GetAtt GuestbookApi.ApiId
+      Description: Week13 coursework - delete after assessment
+  GuestbookSchema:
+    Type: AWS::AppSync::GraphQLSchema
+    Properties:
+      ApiId: !GetAtt GuestbookApi.ApiId
+      Definition: |
+        type GuestbookEntry {
+          entryId: ID!
+          name: String!
+          message: String!
+          createdAt: AWSDateTime!
+        }
+        type Query {
+          listGuestbookEntries(limit: Int): [GuestbookEntry!]!
+        }
+        type Mutation {
+          addGuestbookEntry(name: String!, message: String!): GuestbookEntry!
+        }
+        schema {
+          query: Query
+          mutation: Mutation
+        }
+  AppSyncDynamoRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: appsync.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: OnlyGuestbookTable
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [dynamodb:PutItem, dynamodb:Query]
+                Resource: !GetAtt Guestbook.Arn
+  GuestbookSource:
+    Type: AWS::AppSync::DataSource
+    Properties:
+      ApiId: !GetAtt GuestbookApi.ApiId
+      Name: GuestbookDynamo
+      Type: AMAZON_DYNAMODB
+      ServiceRoleArn: !GetAtt AppSyncDynamoRole.Arn
+      DynamoDBConfig:
+        TableName: !Ref Guestbook
+        AwsRegion: !Ref AWS::Region
+  AddEntryResolver:
+    Type: AWS::AppSync::Resolver
+    DependsOn: GuestbookSchema
+    Properties:
+      ApiId: !GetAtt GuestbookApi.ApiId
+      TypeName: Mutation
+      FieldName: addGuestbookEntry
+      DataSourceName: !GetAtt GuestbookSource.Name
+      RequestMappingTemplate: |
+        #set($name = $ctx.args.name.trim())
+        #set($message = $ctx.args.message.trim())
+        #if($name.length() < 1 || $name.length() > 30 || $message.length() < 1 || $message.length() > 500)
+          $util.error("Invalid name or message length", "BadRequest")
+        #end
+        #set($id = $util.autoId())
+        #set($now = $util.time.nowISO8601())
+        #set($record = {"entryId": $id, "name": $name, "message": $message, "createdAt": $now})
+        {
+          "version": "2018-05-29",
+          "operation": "PutItem",
+          "key": {
+            "PK": $util.dynamodb.toDynamoDBJson("GUESTBOOK"),
+            "SK": $util.dynamodb.toDynamoDBJson("${now}#${id}")
+          },
+          "attributeValues": {
+            "entryId": $util.dynamodb.toDynamoDBJson($id),
+            "name": $util.dynamodb.toDynamoDBJson($name),
+            "message": $util.dynamodb.toDynamoDBJson($message),
+            "createdAt": $util.dynamodb.toDynamoDBJson($now)
+          }
+        }
+      ResponseMappingTemplate: |
+        $util.toJson($ctx.result)
+  ListEntryResolver:
+    Type: AWS::AppSync::Resolver
+    DependsOn: GuestbookSchema
+    Properties:
+      ApiId: !GetAtt GuestbookApi.ApiId
+      TypeName: Query
+      FieldName: listGuestbookEntries
+      DataSourceName: !GetAtt GuestbookSource.Name
+      RequestMappingTemplate: |
+        #set($limit = $util.defaultIfNull($ctx.args.limit, 20))
+        #if($limit < 1 || $limit > 50)
+          $util.error("limit must be 1..50", "BadRequest")
+        #end
+        {
+          "version": "2018-05-29",
+          "operation": "Query",
+          "query": {
+            "expression": "PK = :pk",
+            "expressionValues": {
+              ":pk": $util.dynamodb.toDynamoDBJson("GUESTBOOK")
+            }
+          },
+          "scanIndexForward": false,
+          "limit": $limit
+        }
+      ResponseMappingTemplate: |
+        $util.toJson($ctx.result.items)
+Outputs:
+  ProjectsTable:
+    Value: !Ref Projects
+  SkillsTable:
+    Value: !Ref Skills
+  LinksTable:
+    Value: !Ref ProjectSkills
+  StepsTable:
+    Value: !Ref PipelineSteps
+  GuestbookTable:
+    Value: !Ref Guestbook
+  LambdaName:
+    Value: !Ref ReadLambda
+  ApiUrl:
+    Value: !GetAtt HttpApi.ApiEndpoint
+  AppSyncApiUrl:
+    Value: !GetAtt GuestbookApi.GraphQLUrl
+  AppSyncApiId:
+    Value: !GetAtt GuestbookApi.ApiId
