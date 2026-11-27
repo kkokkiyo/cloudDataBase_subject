@@ -31,7 +31,21 @@ import Base from '../layouts/Base.astro';
         $('prev').disabled=index===0;$('next').disabled=index===items.length-1;
         $('detail').href='/projects/'+encodeURIComponent(select.value)+'/';
       }
-      function change(){index=0;items=dataset.pipeline[select.value].slice().sort((a,b)=>a.step_no-b.step_no);render();}
+      async function change(){
+        index=0;
+        items=(dataset.pipeline[select.value]||[]).slice().sort((a,b)=>a.step_no-b.step_no);
+        try{
+          const cfg=await fetch('/data/runtime-config.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('Not configured');return r.json();});
+          if(cfg.projectApiUrl){
+            const url=cfg.projectApiUrl.replace(/\/$/,'')+'/projects/'+encodeURIComponent(select.value)+'/pipeline';
+            const response=await fetch(url);
+            if(!response.ok)throw Error('Pipeline HTTP '+response.status);
+            const payload=await response.json();
+            if(Array.isArray(payload.steps)&&payload.steps.length) items=payload.steps.sort((a,b)=>a.step_no-b.step_no);
+          }
+        }catch(e){/* static demo fallback */}
+        render();
+      }
       select.onchange=change;
       $('prev').onclick=()=>{if(index>0){index--;render();}};
       $('next').onclick=()=>{if(index+1<items.length){index++;render();}};
