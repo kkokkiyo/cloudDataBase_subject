@@ -1,0 +1,93 @@
+---
+import Base from '../layouts/Base.astro';
+---
+<Base title="Guestbook" description="연구 포트폴리오 방명록">
+  <section class="gb-hero">
+    <p class="gb-kicker">CONTACT / WEEK 13</p>
+    <h1>방명록</h1>
+    <p>연구와 개발 프로젝트에 대한 의견을 남겨주세요. 저장한 글은 AWS AppSync GraphQL을 통해 DynamoDB에 보관됩니다.</p>
+  </section>
+  <div class="gb-grid">
+    <form id="guestbook-form" class="gb-panel">
+      <h2>메시지 남기기</h2>
+      <label for="guest-name">이름</label>
+      <input id="guest-name" name="name" required minlength="1" maxlength="30" autocomplete="name" placeholder="이름 또는 닉네임"/>
+      <label for="guest-message">내용</label>
+      <textarea id="guest-message" name="message" required minlength="1" maxlength="500" rows="5" placeholder="프로젝트에 대한 의견을 남겨주세요."></textarea>
+      <p class="gb-note">이름 30자·메시지 500자 이내. 민감한 개인정보는 입력하지 마세요.</p>
+      <button type="submit" id="submit-entry">등록하기</button>
+      <p id="write-status" role="status" aria-live="polite"></p>
+    </form>
+    <section class="gb-panel">
+      <h2>최근 방명록</h2>
+      <button type="button" id="reload">새로고침</button>
+      <ol id="entries" aria-live="polite"></ol>
+      <p id="read-status" role="status"></p>
+    </section>
+  </div>
+  <script is:inline>
+  (() => {
+    'use strict';
+    const el = id => document.getElementById(id);
+    let settings;
+    const query = 'query RecentEntries($limit: Int) { listGuestbookEntries(limit: $limit) { entryId name message createdAt } }';
+    const mutation = 'mutation AddEntry($name: String!, $message: String!) { addGuestbookEntry(name: $name, message: $message) { entryId name message createdAt } }';
+    async function api(query, variables) {
+      if(!settings?.appSyncApiUrl || !settings?.appSyncApiKey) throw new Error('AppSync 연결 설정이 없습니다.');
+      const response = await fetch(settings.appSyncApiUrl, {
+        method:'POST',headers:{'Content-Type':'application/json','x-api-key':settings.appSyncApiKey},
+        body:JSON.stringify({query,variables})
+      });
+      if(!response.ok) throw new Error('GraphQL HTTP '+response.status);
+      const result = await response.json();
+      if(result.errors?.length) throw new Error(result.errors.map(e=>e.message).join('; '));
+      return result.data;
+    }
+    async function refresh(){
+      el('read-status').textContent='글을 불러오는 중입니다.';
+      try {
+        const result=await api(query,{limit:20});
+        const list=el('entries');list.replaceChildren();
+        for(const entry of result.listGuestbookEntries||[]) {
+          const li=document.createElement('li');li.className='gb-entry';
+          const h=document.createElement('h3');h.textContent=entry.name;
+          const time=document.createElement('time');time.dateTime=entry.createdAt;time.textContent=new Date(entry.createdAt).toLocaleString('ko-KR');
+          const p=document.createElement('p');p.textContent=entry.message;
+          li.append(h,time,p);list.append(li);
+        }
+        el('read-status').textContent=(result.listGuestbookEntries||[]).length?'':'등록된 메시지가 없습니다.';
+      } catch(err) {el('read-status').textContent='조회 실패: '+err.message;}
+    }
+    el('reload').addEventListener('click',refresh);
+    el('guestbook-form').addEventListener('submit',async ev=>{
+      ev.preventDefault();
+      const name=el('guest-name').value.trim(),message=el('guest-message').value.trim();
+      if(!name||name.length>30||!message||message.length>500){el('write-status').textContent='입력 길이를 확인하세요.';return;}
+      const button=el('submit-entry');button.disabled=true;el('write-status').textContent='저장하는 중입니다.';
+      try{
+        await api(mutation,{name,message});
+        el('guest-message').value='';el('write-status').textContent='등록되었습니다.';
+        await refresh();
+      }catch(err){el('write-status').textContent='등록 실패: '+err.message;}
+      finally{button.disabled=false;}
+    });
+    fetch('/data/runtime-config.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('설정 파일 없음');return r.json();})
+      .then(d=>{settings=d;refresh();})
+      .catch(()=>{el('read-status').textContent='아직 AppSync가 연결되지 않았습니다. AWS 배포 후 runtime-config.json 설정이 필요합니다.';});
+  })();
+  </script>
+  <style is:global>
+    .gb-hero{padding:28px 0}.gb-kicker{font-size:.76rem;letter-spacing:.15em;color:#2568a9;font-weight:750}
+    .gb-hero h1{font-size:2.5rem;font-weight:800;margin:7px 0}.gb-hero>p:not(.gb-kicker){color:#6f8196;line-height:1.75}
+    .gb-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.gb-panel{border:1px solid #dbe4ee;border-radius:13px;padding:20px;background:#fff}
+    .gb-panel h2{font-size:1.2rem;font-weight:750;margin:0 0 18px}.gb-panel label{display:block;font-weight:700;margin:14px 0 7px;font-size:.86rem}
+    .gb-panel input,.gb-panel textarea{width:100%;border:1px solid #c1d0e0;border-radius:8px;padding:12px;color:#26374b;background:#fff}
+    .gb-panel button{margin-top:14px;border-radius:8px;padding:11px 16px;background:#205c99;color:#fff;font:inherit;cursor:pointer}
+    .gb-panel button:disabled{opacity:.4}.gb-note{color:#74849b;font-size:.75rem;margin-top:8px}
+    #entries{list-style:none;padding:0;margin:10px 0}.gb-entry{border-bottom:1px solid #dfe6ef;padding:12px 0}
+    .gb-entry h3{font-weight:750}.gb-entry time{font-size:.74rem;color:#8290a2}.gb-entry p{white-space:pre-wrap;overflow-wrap:anywhere;margin-top:10px;line-height:1.65}
+    #read-status,#write-status{font-size:.85rem;color:#ad493e;line-height:1.6;margin-top:13px}
+    @media(max-width:700px){.gb-grid{grid-template-columns:1fr}}
+    @media(prefers-color-scheme:dark){.gb-panel{background:#192637;border-color:#41516a}.gb-panel input,.gb-panel textarea{background:#152337;color:#f0f4fb;border-color:#4d6080}.gb-entry{border-color:#41516a}}
+  </style>
+</Base>
