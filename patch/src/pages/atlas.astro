@@ -41,7 +41,21 @@ import Base from '../layouts/Base.astro';
       skills.forEach(s=>{const a=sp.get(s.skill_id);node(a.x,a.y,s.skill_id.toUpperCase(),false,!active||active===s.skill_id,()=>{active=active===s.skill_id?null:s.skill_id;render();});});
     }
     $('clear').onclick=()=>{active=null;render();};
-    fetch('/data/portfolio.json').then(r=>{if(!r.ok)throw Error('HTTP '+r.status);return r.json();}).then(d=>{projects=d.projects;skills=d.skills;render();}).catch(e=>$('error').textContent=e.message);
+    async function loadData(){
+      const sample=await fetch('/data/portfolio.json').then(r=>r.json());
+      try {
+        const cfg=await fetch('/data/runtime-config.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('Not configured');return r.json();});
+        if(!cfg.projectApiUrl)throw Error('Not configured');
+        const base=cfg.projectApiUrl.replace(/\/$/,'');
+        const [p,g]=await Promise.all([fetch(base+'/projects').then(r=>{if(!r.ok)throw Error('Projects HTTP '+r.status);return r.json();}),
+          fetch(base+'/graph').then(r=>{if(!r.ok)throw Error('Graph HTTP '+r.status);return r.json();})]);
+        const byProject=new Map();
+        for(const edge of g.edges||[]){const list=byProject.get(edge.project_id)||[];list.push(edge.skill_id);byProject.set(edge.project_id,list);}
+        projects=(p.projects||[]).map(item=>({...item,skills:byProject.get(item.project_id)||[]}));
+        skills=g.skills||[];render();$('status').textContent+=' · AWS DynamoDB 연동';
+      }catch(e){projects=sample.projects;skills=sample.skills;render();$('status').textContent+=' · 정적 데이터 모드';}
+    }
+    loadData().catch(e=>$('error').textContent='데이터 로딩 실패: '+e.message);
   })();
   </script>
   <style is:global>
