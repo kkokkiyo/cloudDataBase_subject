@@ -6,6 +6,7 @@ STACK="${STACK:-portfolio-week13}"
 SITE_STACK="${SITE_STACK:-portfolio-week12}"
 CF_URL="${CF_URL:-https://d6oennms0h6ql.cloudfront.net}"
 DIST_DIR="${DIST_DIR:-dist}"
+export DIST_DIR
 if [[ ! -d "$DIST_DIR" ]]; then
   echo "Missing build output directory: $DIST_DIR" >&2
   exit 1
