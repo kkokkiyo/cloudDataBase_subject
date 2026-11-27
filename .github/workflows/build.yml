@@ -47,7 +47,13 @@ jobs:
           test -s portfolio/dist/index.html
           test -s portfolio/dist/atlas/index.html
           test -s portfolio/dist/pipeline/index.html
+          test -s portfolio/dist/guestbook/index.html
           test -s portfolio/dist/data/portfolio.json
+      - name: Validate Week13 Python + CloudFormation
+        run: |
+          python3 -m pip install boto3 cfn-lint
+          python3 -m unittest discover -s coursework/tests -p 'test_*.py'
+          cfn-lint coursework/infra/week13.yaml
       - name: Upload deployable artifact
         uses: actions/upload-artifact@v7
         with:
