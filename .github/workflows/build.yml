@@ -26,7 +26,7 @@ jobs:
           from pathlib import Path
           path=Path('portfolio/src/data/site.json')
           site=json.loads(path.read_text(encoding='utf-8'))
-          for link in reversed([{'label':'Atlas','href':'/atlas/'},{'label':'Replay','href':'/pipeline/'}]):
+          for link in reversed([{'label':'Atlas','href':'/atlas/'},{'label':'Replay','href':'/pipeline/'},{'label':'Guestbook','href':'/guestbook/'}]):
             if not any(i.get('href')==link['href'] for i in site['nav']):
               site['nav'].insert(1,link)
           path.write_text(json.dumps(site,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
